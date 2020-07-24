@@ -1,5 +1,6 @@
 # See example (GA) onemax_ray.py
 # See example (GP) symbreg_ray.py
+# See example (GP) symbreg_numpy_ray.py
 
 # Derek M Tishler
 # Jul 23 2020
@@ -10,6 +11,7 @@ DeltaPenalty and addEphemeralConstant when working at scale(many processes on ma
 '''
 
 from time import sleep
+from time import time
 
 import ray
 from ray.util import ActorPool
@@ -19,7 +21,7 @@ from ray.util import ActorPool
 class Ray_Deap_Map():
     def __init__(self, creator_setup=None, pset_creator=None):
         # issue 946? Ensure non trivial startup to prevent bad load balance across a cluster
-        sleep(0.1)
+        sleep(0.01)
 
         # recreate scope from global
         # For GA no need to provide pset_creator. Both needed for GP
@@ -31,8 +33,9 @@ class Ray_Deap_Map():
         if pset_creator is not None:
             self.pset_creator()
 
-    def ray_remote_eval_batch(self, zipped_input):
-        f, iterable, id_ = zipped_input
+    def ray_remote_eval_batch(self, f, zipped_input):
+        iterable, id_ = zipped_input
+        # attach id so we can reorder the batches
         return [(f(i), id_) for i in iterable]
 
 
@@ -51,8 +54,8 @@ class Ray_Deap_Map_Manager():
 
         if self.n_workers == 1:
             # only 1 worker, normal listcomp/map will work fine. Useful for testing code?
-            #results = [func(item) for item in iterable]
-            results = map(func, iterable)
+            ##results = [func(item) for item in iterable]
+            results = list(map(func, iterable)) #forced eval to time it
         else:
             # many workers, lets use ActorPool
 
@@ -64,11 +67,12 @@ class Ray_Deap_Map_Manager():
             n_per_batch = int(len(iterable)/n_workers) + 1
             batches = [iterable[i:i + n_per_batch] for i in range(0, len(iterable), n_per_batch)]
             id_for_reorder = range(len(batches))
-
-            eval_pool = ActorPool([Ray_Deap_Map.remote(self.creator_setup, self.pset_creator) for _ in range(n_workers)])
-            unordered_results = list(eval_pool.map_unordered(lambda actor, input_tuple: actor.ray_remote_eval_batch.remote(input_tuple),
-                                                             zip([func]*n_workers, batches, id_for_reorder)))
             
+            eval_pool = ActorPool([Ray_Deap_Map.remote(self.creator_setup, self.pset_creator) for _ in range(n_workers)])
+            
+            unordered_results = list(eval_pool.map_unordered(lambda actor, input_tuple: actor.ray_remote_eval_batch.remote(func, input_tuple),
+                                                             zip(batches, id_for_reorder)))
+
             # ensure order of batches
             ordered_batch_results = [batch for batch_id in id_for_reorder for batch in unordered_results if batch_id == batch[0][1]]
             
