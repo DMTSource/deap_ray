@@ -19,11 +19,20 @@ from deap import gp
 ## Ray init code, user needs to apply#################
 # see: https://docs.ray.io/en/master/walkthrough.html
 import ray
-#ray.init(num_cpus=1)
-ray.init()
-
-# THEN import the tool
 from ray_map import ray_deap_map
+
+#ray.init(num_cpus=1) # will use default python map on current process, useful for debugging?
+ray.init(num_cpus=4) # over 1 assigned proc will batch out via ActorPool
+
+'''
+Eval is made arbitrarily more expensive to show differnce.
+'time python symbreg_ray.py' on my machine(8 processors) shows:
+num_cpus=1 (map): 20.3 sec(real)
+num_cpus=2 (ray): 14.1 sec(real)
+num_cpus=4 (ray): 11.9 sec(real)
+num_cpus=7 (ray): 13.1 sec(real)
+num_cpus=8 (ray): 13.0 sec(real)
+'''
 ######################################################
 
 
@@ -69,12 +78,17 @@ toolbox.register("compile", gp.compile, pset=pset)
 def evalSymbReg(individual, points):
     # Transform the tree expression in a callable function
     func = toolbox.compile(expr=individual)
-    # Evaluate the mean squared error between the expression
-    # and the real function : x**4 + x**3 + x**2 + x
-    sqerrors = ((func(x) - x**4 - x**3 - x**2 - x)**2 for x in points)
-    return math.fsum(sqerrors) / len(points),
 
-toolbox.register("evaluate", evalSymbReg, points=[x/10. for x in range(-10,10)])
+    # make eval arbitrarily more expensive to illustate ray vs std map
+    for _ in range(100):
+        # Evaluate the mean squared error between the expression
+        # and the real function : x**4 + x**3 + x**2 + x
+        sqerrors = ((func(x) - x**4 - x**3 - x**2 - x)**2 for x in points)
+        fitness = math.fsum(sqerrors) / float(len(points)),
+
+    return fitness
+
+toolbox.register("evaluate", evalSymbReg, points=[x/100. for x in range(-100,100)]) 
 toolbox.register("select", tools.selTournament, tournsize=3)
 toolbox.register("mate", gp.cxOnePoint)
 toolbox.register("expr_mut", gp.genFull, min_=0, max_=2)
@@ -101,7 +115,7 @@ def main():
     mstats.register("min", numpy.min)
     mstats.register("max", numpy.max)
 
-    pop, log = algorithms.eaSimple(pop, toolbox, 0.5, 0.1, 40, stats=mstats,
+    pop, log = algorithms.eaSimple(pop, toolbox, 0.5, 0.1, 5, stats=mstats,
                                    halloffame=hof, verbose=True)
     # print log
     return pop, log, hof
