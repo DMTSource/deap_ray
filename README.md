@@ -1,5 +1,5 @@
 # deap_ray
-Ray based map function for Deap with examples.   
+Ray based map function for Deap with examples. Replaces SCOOP for multiprocess/cluster use in Deap for Python 3.  
 Automatically batches iterator to multiple workers for many processors or clusters.  
 
 This repository is temporary, ideally, and can be added to Deap once python 3 is standardized as Ray requires python > 3.5:  
