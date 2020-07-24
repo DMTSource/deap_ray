@@ -5,7 +5,7 @@
 # Jul 23 2020
 
 '''
-A replacement for map using Ray that automates batching. Works on partials as to allow and fix pickle issues such as
+A replacement for map using Ray that automates batching to many processors/cluster. Fixes pickle issues such as
 DeltaPenalty and addEphemeralConstant when working at scale(many processes on machine or cluster of nodes)
 '''
 
@@ -21,10 +21,12 @@ class Ray_Deap_Map():
         # issue 946? Ensure non trivial startup to prevent bad load balance across a cluster
         sleep(0.1)
 
-        # recreate scope from global (for ex need toolbox in gp too)
+        # recreate scope from global
+        # For GA no need to provide pset_creator. Both needed for GP
         self.creator_setup = creator_setup
         if creator_setup is not None:
             self.creator_setup()
+
         self.pset_creator = pset_creator
         if pset_creator is not None:
             self.pset_creator()
@@ -33,28 +35,24 @@ class Ray_Deap_Map():
         f, iterable, id_ = zipped_input
         return [(f(i), id_) for i in iterable]
 
-# if eval is inxpensive, ray will be slow at scale(network overhead) just like scoop. If that is the case need to batch out work
-@ray.remote
+
 class Ray_Deap_Map_Manager():
     def __init__(self, creator_setup=None, pset_creator=None):
-        # issue 946? Ensure non trivial startup to prevent bad load balance across a cluster
-        sleep(0.1)
+
+        # Can adjust the number of processes in ray.init or when launching cluster
+        self.n_workers = int(ray.cluster_resources()['CPU'])
 
         # recreate scope from global (for ex need toolbox in gp too)
         self.creator_setup = creator_setup
-        if creator_setup is not None:
-            self.creator_setup()
-        self.pset_creator = pset_creator
-        if pset_creator is not None:
-            self.pset_creator()
-
-        self.n_workers = int(ray.cluster_resources()['CPU'])
+        self.pset_creator = pset_creator        
 
     def map(self, func, iterable):
 
+
         if self.n_workers == 1:
-            # only 1 worker, normal list comp
-            results = [func(item) for item in iterable]
+            # only 1 worker, normal listcomp/map will work fine. Useful for testing code?
+            #results = [func(item) for item in iterable]
+            results = map(func, iterable)
         else:
             # many workers, lets use ActorPool
 
@@ -79,11 +77,11 @@ class Ray_Deap_Map_Manager():
             
         return results
 
-# This is what we register for map in deap scripts
-# we need to explicitly launch .remote() on ray workers, so cant assign as partiels like scoop and pool in old days
+# This is what we register as map in deap toolbox. 
+# For GA no need to provide pset_creator. Both needed for GP
 def ray_deap_map(func, pop, creator_setup=None, pset_creator=None):
-    map_worker = Ray_Deap_Map_Manager.remote(creator_setup, pset_creator)
-
-    results = ray.get(map_worker.map.remote(func, pop))
+    # Manager will determine if batching is needed and crate remote actors to do work
+    map_ray_manager = Ray_Deap_Map_Manager(creator_setup, pset_creator)
+    results = map_ray_manager.map(func, pop)
 
     return results
