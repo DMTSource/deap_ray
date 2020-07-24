@@ -9,6 +9,7 @@ import math
 import random
 
 import numpy
+numpy.random.seed(318)
 
 from deap import algorithms
 from deap import base
@@ -16,33 +17,44 @@ from deap import creator
 from deap import tools
 from deap import gp
 
+import gc
+
 ## Ray init code, user needs to apply#################
 # see: https://docs.ray.io/en/master/walkthrough.html
 import ray
 from ray_map import ray_deap_map
 
-#ray.init(num_cpus=1) # will use default python map on current process, useful for debugging?
-ray.init(num_cpus=4) # over 1 assigned proc will batch out via ActorPool
+# 1 will use normal map on main(useful for debugging?), above 1 will use ActorPool and batching.
+num_cpus = 4
+
+# Setting resources(memory, object_store_memory) helps to ensure consistent results.
+# View the Ray dashboard at localhost:8265 for more info if unsure(start with plain ray.init()))
+ray.init(num_cpus=num_cpus,
+         memory=num_cpus * 1.3 * 1073741824, # n_cpu * 0.5gb for memory
+         object_store_memory=num_cpus * 0.3 * 1073741824) # n_cpu * 0.25gb for object store
 
 '''
-Eval is made arbitrarily more expensive to show differnce.
 'time python symbreg_ray.py' on my machine(8 processors) shows:
-num_cpus=1 (map): 20.3 sec(real)
-num_cpus=2 (ray): 14.1 sec(real)
-num_cpus=4 (ray): 11.9 sec(real)
-num_cpus=7 (ray): 13.1 sec(real)
-num_cpus=8 (ray): 13.0 sec(real)
+num_cpus=1 (map): 0m19.575s (real)
+num_cpus=2 (ray): 0m13.447s (real)
+num_cpus=3 (ray): 0m11.672s (real)
+num_cpus=4 (ray): 0m10.704s (real)
+num_cpus=5 (ray): 0m9.515s (real)
+num_cpus=6 (ray): 0m11.135s (real)
+num_cpus=7 (ray): 0m11.252s (real)
+num_cpus=8 (ray): 0m11.301s (real)
 '''
 ######################################################
 
 
-
 # Define new functions
 def protectedDiv(left, right):
+    if right == 0.:
+        return 0.
     try:
         return left / right
     except ZeroDivisionError:
-        return 1
+        return 1.
 
 
 ##This is different!#################################
@@ -57,12 +69,12 @@ def pset_creator():
     pset.addPrimitive(math.sin, 1)
     # we only have to form and pass pset_creator to ray workers because
     #    this singe item, else cant be found in sscope
-    pset.addEphemeralConstant("rand101", lambda: random.randint(-1,1))
+    pset.addEphemeralConstant("rand101", lambda: random.uniform(-1,1))
     pset.renameArguments(ARG0='x')
     return pset
 pset = pset_creator()
 
-## GP Requires both creators so we can compile inside val as most examples show
+## GP+Ray Requires both creators so we can compile inside val as most examples show
 def creator_setup():
     creator.create("FitnessMin", base.Fitness, weights=(-1.0,))
     creator.create("Individual", gp.PrimitiveTree, fitness=creator.FitnessMin)
@@ -75,20 +87,32 @@ toolbox.register("individual", tools.initIterate, creator.Individual, toolbox.ex
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 toolbox.register("compile", gp.compile, pset=pset)
 
-def evalSymbReg(individual, points):
+######################################################
+# use a shared memory object to prevent copy of data to each eval
+#points = numpy.random.uniform(-1., 1., (int(1e3),)) #not much speedup at all
+points = numpy.random.uniform(-1., 1., (int(1e4),)) #now we see it scale
+
+shared_points_store_id = ray.put(points)
+
+del points
+gc.collect()
+######################################################
+
+def evalSymbReg(individual):
     # Transform the tree expression in a callable function
     func = toolbox.compile(expr=individual)
 
-    # make eval arbitrarily more expensive to illustate ray vs std map
-    for _ in range(100):
-        # Evaluate the mean squared error between the expression
-        # and the real function : x**4 + x**3 + x**2 + x
-        sqerrors = ((func(x) - x**4 - x**3 - x**2 - x)**2 for x in points)
-        fitness = math.fsum(sqerrors) / float(len(points)),
+    ######################################################
+    shared_memory_points = ray.get(shared_points_store_id)
+    ######################################################
 
-    return fitness
+    # Evaluate the mean squared error between the expression
+    # and the real function : x**4 + x**3 + x**2 + x
+    sqerrors = ((func(x) - x**4 - x**3 - x**2 - x)**2 for x in shared_memory_points)
 
-toolbox.register("evaluate", evalSymbReg, points=[x/100. for x in range(-100,100)]) 
+    return math.fsum(sqerrors) / float(len(shared_memory_points)),
+
+toolbox.register("evaluate", evalSymbReg) 
 toolbox.register("select", tools.selTournament, tournsize=3)
 toolbox.register("mate", gp.cxOnePoint)
 toolbox.register("expr_mut", gp.genFull, min_=0, max_=2)
@@ -115,7 +139,7 @@ def main():
     mstats.register("min", numpy.min)
     mstats.register("max", numpy.max)
 
-    pop, log = algorithms.eaSimple(pop, toolbox, 0.5, 0.1, 5, stats=mstats,
+    pop, log = algorithms.eaSimple(pop, toolbox, 0.5, 0.1, 3, stats=mstats,
                                    halloffame=hof, verbose=True)
     # print log
     return pop, log, hof
