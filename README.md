@@ -18,12 +18,12 @@ Please check out Deap, its great!
 https://deap.readthedocs.io/en/master/  
 https://github.com/DEAP/deap  
 
-This repo includes the file you will need to import to your Deap script: 
+This repo includes the file you will need to import to your Deap script:  
 **ray_map.py**
 
 Also included are two simple, Genetic Programming(GP) and Genetic Algorithm(GA), examples to illustrate the nuances of implementation in your own Deap code. I attempted to make switching to parallel, like the previous uses of SCOOP and MP, as simple as possible with Deap. I will work to improve this code further as some use cases are probably missing. Please report issues!  
-**onemax_ray.py** (Uses a DeltaPenalty to illustrate power of Ray to properly prevent pickle problems!)  
-**symbreg_ray.py** (Uses an addEphemeralConstant to illustrate power of Ray to penultimately persuade pickle predicaments!)  
+**onemax_ray.py** *(Uses a DeltaPenalty to illustrate power of Ray to properly prevent pickle problems!)*  
+**symbreg_ray.py** *(Uses an addEphemeralConstant to illustrate power of Ray to penultimately persuade pickle predicaments!)*  
 
 ###### Note: 
 Much like scoop, there is no magic bullet to fight network overheard and spooling up remote workers. In these examples, evaluation of individuals is a fast, trivial task. You will likely notice a slowdown in smaller parallel loads vs the standard examples on 1 process. This code automatically and evenly batches out the passed along iterable, if ray.init() utilizes 1 or more processes, to better utilize each remote worker. 
