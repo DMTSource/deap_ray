@@ -32,5 +32,5 @@ Don't forget to check out Ray's shared memory objects vs loading things inside e
 https://docs.ray.io/en/master/walkthrough.html?highlight=put
 
 ###### About:
-I start using Deap for Medical Physics research and optimizations many years ago. Recently, I began using Ray and it has helped me scale python code in ways I can't describe(yes I can, see shared memory objects above). I hope this code may be of use to others who enjoy using Deap for fun and work!  
+I started using Deap for Medical Physics research and optimizations many years ago. Recently, I began using Ray and it has helped me scale python code in ways I can't describe(yes I can, see shared memory objects above). I hope this code may be of use to others who enjoy using Deap for fun and work!  
 https://www.linkedin.com/in/derekmtishler/
