@@ -18,11 +18,20 @@ from deap import tools
 ##Ray init code, user needs to apply#################
 # see: https://docs.ray.io/en/master/walkthrough.html
 import ray
-#ray.init(num_cpus=1)
-ray.init()
-
-# THEN import the tool
 from ray_map import ray_deap_map
+
+#ray.init(num_cpus=1) # will use default python map on current process, useful for debugging?
+ray.init(num_cpus=4) # will batch out via ActorPool, slower vs above for trivial loads because overhead
+
+'''
+Eval is made arbitrarily more expensive to show difference. Tricky as DeltaPenalty skips evals sometimes.
+'time python onemax_ray.py' on my machine(8 processors) shows:
+num_cpus=1 (map): 25.5 sec(real)
+num_cpus=2 (ray): 17.5 sec(real)
+num_cpus=4 (ray): 13.0 sec(real)
+num_cpus=7 (ray): 13.3 sec(real)
+num_cpus=8 (ray): 13.6 sec(real)
+'''
 ######################################################
 
 
@@ -47,26 +56,29 @@ toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
 # Including the problematic DeltaPenalty to illustate ray strength
 def evalOneMax(individual):
-    return sum(individual),
+    # make eval arbitrarily more expensive to illustate ray vs std map
+    for _ in range(20000):
+        fitness = sum(individual)**2/len(individual),
+    return fitness
 
 # from https://deap.readthedocs.io/en/master/tutorials/advanced/constraints.html
 def feasible(individual):
     """Feasibility function for the individual. Returns True if feasible False
     otherwise."""
-    if 50 < individual[0] < 60:
+    if -0.5 < individual[0] < 0.5:
         return True
     return False
 
 # from https://deap.readthedocs.io/en/master/tutorials/advanced/constraints.html
 def distance(individual):
     """A distance function to the feasibility region."""
-    return (individual[0] - 5.0)**2
+    return (individual[0] - 0.0)**2
 
 
 toolbox.register("evaluate", evalOneMax)
 # Here we apply a feasible constraint: 
 # https://deap.readthedocs.io/en/master/tutorials/advanced/constraints.html
-toolbox.decorate("evaluate", tools.DeltaPenalty(feasible, 50.0, distance))
+toolbox.decorate("evaluate", tools.DeltaPenalty(feasible, 1.0, distance))
 toolbox.register("mate", tools.cxTwoPoint)
 toolbox.register("mutate", tools.mutFlipBit, indpb=0.05)
 toolbox.register("select", tools.selTournament, tournsize=3)
@@ -87,5 +99,5 @@ if __name__ == "__main__":
     stats.register("min", numpy.min)
     stats.register("max", numpy.max)
 
-    algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=40, 
+    algorithms.eaSimple(pop, toolbox, cxpb=0.5, mutpb=0.2, ngen=5, 
                         stats=stats, halloffame=hof)
