@@ -17,7 +17,7 @@ import ray
 from ray.util import ActorPool
 
 
-@ray.remote
+@ray.remote(num_cpus=1)
 class Ray_Deap_Map():
     def __init__(self, creator_setup=None, pset_creator=None):
         # issue 946? Ensure non trivial startup to prevent bad load balance across a cluster
